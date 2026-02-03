@@ -220,9 +220,27 @@ function drawMenu() {
     fill(0, 242, 255); textAlign(CENTER); textSize(70); text("JETPACK DOG", width/2, 140);
     fill(200); textSize(25); text(`HIGHSCORE: ${highscore}m`, width/2, 190);
     fill(255, 255, 0); text(`MONEY: $${moneyTotal}`, width/2, 230);
+    
+    // --- BLOQUE DE CONTROLES NEÓN ---
+    push();
+    drawingContext.shadowBlur = 15;
+    drawingContext.shadowColor = '#00f2ff'; 
+    fill(255); 
+    textSize(18); 
+    // Un pequeño parpadeo sutil usando frameCount
+    if (frameCount % 60 < 50) {
+        text("CONTROLS: SPACE: FLY | P: PAUSE", width/2, 430);
+    } else {
+        fill(0, 242, 255);
+        text("CONTROLS: SPACE: FLY | P: PAUSE", width/2, 430);
+    }
+    pop();
+    // --------------------------------
+
     fill(255, 255, 0); rect(width/2 - 85, 290, 170, 70, 10);
     fill(0); textSize(35); text("PLAY", width/2, 335);
 }
+
 
 function drawPauseScreen() {
     fill(0, 0, 0, 150); rect(0, 0, width, height);
