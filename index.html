@@ -121,7 +121,7 @@ class Dog {
     reset() {
         this.x = -100; this.y = height / 2;
         this.vy = 0; this.w = 85; this.h = 65;
-        this.gravity = 0.40; this.jetForce = 0.80;
+        this.gravity = 0.35; this.jetForce = 0.80;
         this.maxSpeed = 8; this.entering = true; this.isYellow = false;
         this.invincible = 0; 
     }
@@ -216,7 +216,7 @@ function updateGame(frozen) {
     }
 
     // OBSTACULOS: USAMOS gameTimer
-    if (!frozen && distance > 5 && gameTimer % 65 == 0) {
+    if (!frozen && distance > 5 && gameTimer % 85 == 0) {
         let isH = random() > 0.5;
         obstacles.push(isH ? {x: width, y: random(50, 400), w: 140, h: 20} : {x: width, y: random(50, 350), w: 20, h: 140});
     }
