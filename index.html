@@ -246,7 +246,7 @@ function updateGame(frozen) {
         if (frameCount % 3 === 0) coins.push({ x: width + 20, y: random(20, height - 20) });
     }
 
-    if (!frozen && distance >= 1 && gameTimer % 8 === 0) diamonds.push({ x: width + 20, y: random(50, height - 50) });
+    if (!frozen && distance >= 100 && gameTimer % 8000 === 0) diamonds.push({ x: width + 20, y: random(50, height - 50) });
 
     if (!frozen && gameTimer % 4000 === 0 && !bigCoin) bigCoin = { x: width + 50, y: random(100, 400), size: 80, angle: 0 };
     
@@ -321,7 +321,7 @@ function updateGame(frozen) {
         let d = diamonds[i]; if(!frozen) d.x -= gameSpeed;
         push(); imageMode(CENTER); image(diamondImg, d.x, d.y, 40, 40); pop();
         if (!frozen && dist(player.x + 40, player.y + 30, d.x, d.y) < 40) { 
-            diamondsTotal += 999; diamUI.timer = 120; // 2 seconds
+            diamondsTotal += 1; diamUI.timer = 120; // 2 seconds
             playCoinTone(); gameSaveData(); diamonds.splice(i, 1); 
         }
         if (d.x < -200) diamonds.splice(i, 1);
