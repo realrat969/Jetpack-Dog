@@ -16,9 +16,10 @@
 </head>
 <body>
 <div id="loadingScreen">
-    <div id="loadingText">LOADING...</div>
-    <div id="loadingWarning">If the game does not load within 30 seconds, please refresh the page. </div>
+    <div id="loadingText">LOADING ASSETS...</div>
+    <div id="loadingWarning">If the game does not load within 45 seconds, please refresh the page. </div>
     <div id="loadingWarning">To hear the game sounds, please interact with the page (click)</div>
+    <div id="loadingWarning">If the audio starts glitching, simply refresh the page.</div>
 </div>
 <script>
 let gameState = "MENU", dogImg, coinImg, diamondImg, soundMinigun, soundShock, musicBg, musicLobby;
@@ -236,7 +237,7 @@ class Dog {
     reset() {
         this.x = -100; this.y = height / 2;
         this.vy = 0; this.w = 85; this.h = 65;
-        this.gravity = 0.40; this.jetForce = 0.80;
+        this.gravity = 0.38; this.jetForce = 0.80;
         this.maxSpeed = 8; this.entering = true; this.isYellow = false;
         this.invincible = 0; 
     }
