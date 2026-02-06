@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Jetpack Dogride</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
+    <style>
+        body { margin: 0; background: #1a1a1a; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        canvas { border: 3px solid #00f2ff; box-shadow: 0 0 15px #00f2ff; }
+        #loadingScreen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f0f19; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999; font-family: Arial, sans-serif; }
+        #loadingScreen.hidden { display: none; }
+        #loadingText { color: #00f2ff; font-size: 24px; margin-bottom: 20px; text-shadow: 0 0 10px #00f2ff; }
+        #loadingWarning { color: #ffff00; font-size: 14px; text-align: center; max-width: 400px; }
+    </style>
+</head>
+<body>
+<div id="loadingScreen">
+    <div id="loadingText">LOADING...</div>
+    <div id="loadingWarning">If the game does not load within 30 seconds, please refresh the page. </div>
+    <div id="loadingWarning">To hear the game sounds, please interact with the page (click)</div>
+</div>
+<script>
+let gameState = "MENU", dogImg, coinImg, diamondImg, soundMinigun, soundShock, musicBg, musicLobby;
+// NUEVAS IMAGENES
+let ratImg, dogeImg, cheemsImg, hamsterImg, gatoImg;
+
+let player, obstacles = [], coins = [], particles = [], bullets = [], redLasers = [], diamonds = [];
+let distance = 0, moneyTotal = 0, diamondsTotal = 0, highscore = 0, gameSpeed = 5, shake = 0, reviveTimer = 0;
+let audioStarted = false, isPaused = false;
+let revivePrice = 500; 
+let revivePriceDiam = 1; 
+let osc, envelope; 
+
+let gameTimer = 0; 
+
+// SOUND MANAGEMENT FOR LAG PREVENTION
+let lastShockSoundTime = 0;
+let shockSoundCooldown = 200; // ms cooldown between sound plays
+
+let bigCoin = null;
+// MINIGUN SOUND HELPERS (no start cooldown)
+function startMinigun() {
+    if (!soundMinigun || !soundMinigun.isLoaded()) return;
+    if (!soundMinigun.isPlaying()) {
+        soundMinigun.setVolume(0.8);
+        soundMinigun.loop();
+    } else {
+        soundMinigun.setVolume(0.8);
+    }
+}
+
+function stopMinigun() {
+    if (!soundMinigun || !soundMinigun.isLoaded()) return;
+    if (soundMinigun.isPlaying()) soundMinigun.stop();
+}
+let coinRainTimer = 0;
+let coinUI = { x: -300, timer: 0 }; 
+let diamUI = { x: -300, timer: 0 };
+let quitConfirm = false;
+let resumeTimer = 0;
+
+let backgroundFrame = 0;
+let deadTimer = 0;
+let gameOverY = 600; 
+
+// Variables de personalización y SHOP mejoradas
+let boughtColors = ['CLASSIC'];
+let feedbackTimer = 0;
+let feedbackText = "";
+let bulletColor = { r: 255, g: 255, b: 150, name: 'CLASSIC' };
+let shopOptions = [
+    { name: 'CLASSIC', r: 255, g: 255, b: 150, price: 0 },
+    { name: 'RED', r: 255, g: 50, b: 50, price: 10 },
+    { name: 'BLUE', r: 50, g: 100, b: 255, price: 10 },
+    { name: 'GREEN', r: 50, g: 255, b: 50, price: 10 },
+    { name: 'PINK', r: 255, g: 100, b: 255, price: 10 },
+    { name: 'CYAN', r: 0, g: 255, b: 255, price: 10 },
+    { name: 'ORANGE', r: 255, g: 150, b: 0, price: 10 },
+    { name: 'PURPLE', r: 150, g: 0, b: 255, price: 10 }
+];
+
+// VARIABLES NUEVAS PARA SKINS
+let shopPage = 0; // 0 = Colors, 1 = Skins
+let currentSkin = 'DEFAULT';
+let boughtSkins = ['DEFAULT'];
+let skinsList = []; // Se llena en setup
+let skinMap = {};   // Se llena en setup
+
+// Variable global para controlar el cursor
+let hoverActive = false;
+
+const DATA_DOG = "";
+const DATA_COIN = "";
+const DATA_DIAMOND = "";
+
+// PEGAR AQUI BASE64 SI SE DESEA, SINO CARGA DE ARCHIVO LOCAL
+const DATA_RAT = "";
+const DATA_DOGE = "";
+const DATA_CHEEMS = "";
+const DATA_HAMSTER = "";
+const DATA_GATO = "";
+
+function preload() {
+    dogImg = (DATA_DOG !== "") ? loadImage(DATA_DOG) : loadImage('dog.png');
+    coinImg = (DATA_COIN !== "") ? loadImage(DATA_COIN) : loadImage('coin.png');
+    diamondImg = (DATA_DIAMOND !== "") ? loadImage(DATA_DIAMOND) : loadImage('diamond.png');
+    
+    // CARGAR NUEVAS SKINS
+    ratImg = (DATA_RAT !== "") ? loadImage(DATA_RAT) : loadImage('rat.png');
+    dogeImg = (DATA_DOGE !== "") ? loadImage(DATA_DOGE) : loadImage('doge.png');
+    cheemsImg = (DATA_CHEEMS !== "") ? loadImage(DATA_CHEEMS) : loadImage('cheems.png');
+    hamsterImg = (DATA_HAMSTER !== "") ? loadImage(DATA_HAMSTER) : loadImage('hamster.png');
+    gatoImg = (DATA_GATO !== "") ? loadImage(DATA_GATO) : loadImage('gato.png');
+
+    soundMinigun = loadSound('minigun-shooting-awesome-sound-90007.mp3');
+    soundShock = loadSound('freesound_community-49-electroshockwav-46620.mp3');
+    musicBg = loadSound('musicafondo.mp3');
+    musicLobby = loadSound('lobbymusic.mp3');
+}
+
+function setup() {
+    createCanvas(800, 500);
+    player = new Dog();
+    highscore = parseInt(gameGetItem('highscore')) || 0;
+    moneyTotal = parseInt(gameGetItem('money')) || 0;
+    diamondsTotal = parseInt(gameGetItem('diamonds')) || 0;
+    
+    let savedBought = gameGetItem('boughtColors');
+    if(savedBought) boughtColors = JSON.parse(savedBought);
+    
+    // CARGAR COLOR DE BALA
+    let savedColor = gameGetItem('bulletColor');
+    if(savedColor) bulletColor = JSON.parse(savedColor);
+
+    // CARGAR DATOS DE SKINS
+    let savedSkins = gameGetItem('boughtSkins');
+    if(savedSkins) boughtSkins = JSON.parse(savedSkins);
+    let savedEquip = gameGetItem('currentSkin');
+    if(savedEquip) currentSkin = savedEquip;
+
+    // DEFINICION DE LA LISTA DE SKINS (Max 6 por pagina)
+    // Precio: 25 diamantes O 5000 monedas
+    skinsList = [
+        { name: 'DEFAULT', img: dogImg, priceDiam: 0, priceCoin: 0 },
+        { name: 'RAT', img: ratImg, priceDiam: 25, priceCoin: 5000 },
+        { name: 'DOGE', img: dogeImg, priceDiam: 25, priceCoin: 5000 },
+        { name: 'CHEEMS', img: cheemsImg, priceDiam: 25, priceCoin: 5000 },
+        { name: 'HAMSTER', img: hamsterImg, priceDiam: 25, priceCoin: 5000 },
+        { name: 'GATO', img: gatoImg, priceDiam: 25, priceCoin: 5000 }
+    ];
+
+    // Mapeo rápido para dibujar
+    skinMap = {
+        'DEFAULT': dogImg, 'RAT': ratImg, 'DOGE': dogeImg, 
+        'CHEEMS': cheemsImg, 'HAMSTER': hamsterImg, 'GATO': gatoImg
+    };
+    
+    osc = new p5.Oscillator('square');
+    envelope = new p5.Envelope();
+    envelope.setADSR(0.01, 0.05, 0.1, 0.05);
+    envelope.setRange(0.4, 0); // Bajamos un poco el volumen máximo para evitar saturación
+    osc.amp(0);
+    osc.start();
+    
+    if (musicLobby) {
+        musicLobby.setVolume(0.4); 
+        musicLobby.loop();
+    }
+    
+    frameRate(60);
+    
+    // Hide loading screen
+    let loadingScreen = document.getElementById('loadingScreen');
+    if (loadingScreen) loadingScreen.classList.add('hidden');
+}
+
+function playCoinTone() {
+    if (!audioStarted || !osc) return;
+    // OPTIMIZACION DE SONIDO: Evitar superposición excesiva
+    let currentTime = millis();
+    osc.freq(880); 
+    envelope.play(osc);
+    // Programar el cambio de frecuencia con un pequeño delay seguro
+    setTimeout(() => { if(osc) osc.freq(1320); }, 50);
+}
+
+function draw() {
+    hoverActive = false; // Reset cursor state check
+    if (isPaused) { drawPauseScreen(); checkCursor(); return; }
+    background(15, 15, 25);
+    drawGrid();
+    if (shake > 0) { translate(random(-shake, shake), random(-shake, shake)); shake *= 0.9; }
+    
+    if (gameState === "MENU") drawMenu();
+    else if (gameState === "SHOP") drawShop();
+    else if (gameState === "PLAY") {
+        if (resumeTimer > 0) {
+            updateGame(true);
+            drawResumeCountdown();
+        } else {
+            updateGame(false);
+            backgroundFrame++; 
+        }
+    }
+    else if (gameState === "DEAD") drawDeadScreen();
+    
+    checkCursor();
+}
+
+// Función auxiliar para gestionar el cursor
+function checkCursor() {
+    if (hoverActive) cursor(HAND);
+    else cursor(ARROW);
+}
+
+// Función auxiliar para botones interactivos con animación
+function isMouseOver(x, y, w, h) {
+    if (mouseX > x && mouseX < x + w && mouseY > y && mouseY < y + h) {
+        hoverActive = true;
+        return true;
+    }
+    return false;
+}
+
+function drawGrid() {
+    stroke(40, 40, 70); strokeWeight(1);
+    let offset = (backgroundFrame * gameSpeed % 50);
+    for (let i = 0; i <= width + 50; i += 50) {
+        line(i - offset, 0, i - offset, height);
+    }
+}
+
+class Dog {
+    constructor() { this.reset(); }
+    reset() {
+        this.x = -100; this.y = height / 2;
+        this.vy = 0; this.w = 85; this.h = 65;
+        this.gravity = 0.40; this.jetForce = 0.80;
+        this.maxSpeed = 8; this.entering = true; this.isYellow = false;
+        this.invincible = 0; 
+    }
+    update() {
+        if (this.entering) { this.x += 5; if (this.x >= 100) this.entering = false; return; }
+        this.vy += this.gravity;
+        if (this.invincible > 0) this.invincible--;
+        if ((mouseIsPressed || keyIsDown(32)) && gameState === "PLAY" && resumeTimer <= 0) {
+            this.vy -= this.jetForce;
+            startMinigun();
+            if (frameCount % 3 === 0) {
+                bullets.push({x: this.x + 20, y: this.y + 55}, {x: this.x + 65, y: this.y + 55});
+            }
+        } else {
+            stopMinigun();
+        }
+        this.vy = constrain(this.vy, -this.maxSpeed, this.maxSpeed);
+        this.y += this.vy;
+        
+        // BOUNDARY COLLISION FIX - Prevent bouncing
+        if (this.y <= 0) { 
+            this.y = 0; 
+            if (this.vy < 0) this.vy = 0;
+        }
+        if (this.y >= height - this.h) { 
+            this.y = height - this.h; 
+            if (this.vy > 0) this.vy = 0;
+        }
+    }
+    draw() {
+        if (gameState === "DEAD") return; 
+        if (this.invincible > 0 && frameCount % 10 < 5) return; 
+        push();
+        if (this.isYellow) tint(255, 255, 0);
+        let angle = map(this.vy, -this.maxSpeed, this.maxSpeed, -0.1, 0.1);
+        translate(this.x + this.w/2, this.y + this.h/2);
+        rotate(angle);
+        imageMode(CENTER);
+        
+        // MODIFICACION PARA DIBUJAR LA SKIN ACTUAL
+        let currentSprite = skinMap[currentSkin] || dogImg;
+        let imgW = currentSprite.width || 100;
+        let imgH = currentSprite.height || 100;
+        
+        // Se mantiene el tamaño visual basado en this.h para no romper hitboxes visuales
+        image(currentSprite, 0, 0, this.h * (imgW/imgH), this.h);
+        pop();
+    }
+}
+
+function spawnCoinPattern() {
+    let type = random(['SINE', 'TEXT_COINS', 'STRAIGHT_LINE']);
+    let startY = random(150, 350);
+    let tempCoins = [];
+    if (type === 'SINE') {
+        for(let i=0; i<12; i++) tempCoins.push({x: width + i*50, y: startY + sin(i*0.5)*80});
+    } else if (type === 'TEXT_COINS') {
+        let pattern = [[0,0],[0,1],[0,2],[1,0],[1,2],[2,0],[2,2],[4,0],[4,1],[4,2],[5,0],[5,2],[6,0],[6,1],[6,2],[8,0],[8,1],[8,2],[10,0],[10,1],[10,2],[11,0],[12,0],[12,1],[12,2],[14,0],[14,1],[14,2],[15,0],[15,2],[16,0],[16,1],[16,2]];
+        pattern.forEach(p => tempCoins.push({x: width + p[0]*35, y: startY + p[1]*35}));
+    } else if (type === 'STRAIGHT_LINE') {
+        for(let i=0; i<10; i++) tempCoins.push({x: width + i*50, y: startY});
+    }
+    tempCoins.forEach(c => coins.push(c));
+}
+
+function updateGame(frozen) {
+    if (!frozen) {
+        gameTimer++;
+        distance += gameSpeed / 60;
+        
+        // OPTIMIZACION DE VELOCIDAD: TOPE EN 3000m
+        let calcDist = (distance > 3000) ? 3000 : distance;
+        if (calcDist > 200) gameSpeed = 5 + floor((calcDist - 200) / 200) * 1.5;
+        
+        player.update();
+    }
+    player.draw();
+
+    if (!frozen && coinRainTimer > 0) {
+        coinRainTimer--;
+        if (frameCount % 3 === 0) coins.push({ x: width + 20, y: random(20, height - 20) });
+    }
+
+    if (!frozen && distance >= 100 && gameTimer % 4500 === 0) diamonds.push({ x: width + 20, y: random(50, height - 50) });
+
+    if (!frozen && gameTimer % 4000 === 0 && !bigCoin) bigCoin = { x: width + 50, y: random(100, 400), size: 80, angle: 0 };
+    
+    if (bigCoin) {
+        if (!frozen) { bigCoin.x -= gameSpeed * 0.6; bigCoin.angle += 0.05; }
+        let oscY = bigCoin.y + sin(bigCoin.angle) * 30;
+        push();
+        imageMode(CENTER);
+        drawingContext.shadowBlur = 25; drawingContext.shadowColor = 'cyan';
+        image(coinImg, bigCoin.x, oscY, bigCoin.size, bigCoin.size);
+        pop();
+        if (!frozen && dist(player.x + 40, player.y + 30, bigCoin.x, oscY) < 60) {
+            coinRainTimer = 450; bigCoin = null; shake = 15;
+        } else if (bigCoin.x < -100) bigCoin = null;
+    }
+
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        drawingContext.shadowBlur = 10; 
+        drawingContext.shadowColor = color(bulletColor.r, bulletColor.g, bulletColor.b);
+        fill(bulletColor.r, bulletColor.g, bulletColor.b); noStroke(); 
+        rect(bullets[i].x, bullets[i].y, 4, 12);
+        if(!frozen) bullets[i].y += 12;
+        if (bullets[i].y > height) bullets.splice(i, 1);
+    }
+
+    if (!frozen && distance > 5 && gameTimer % 85 == 0) {
+        let isH = random() > 0.5;
+        obstacles.push(isH ? {x: width, y: random(50, 400), w: 140, h: 20} : {x: width, y: random(50, 350), w: 20, h: 140});
+    }
+
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        let o = obstacles[i]; if(!frozen) o.x -= gameSpeed;
+        drawingContext.shadowBlur = 15; drawingContext.shadowColor = 'yellow';
+        fill(255, 255, 0); stroke(255); strokeWeight(2); rect(o.x, o.y, o.w, o.h, 5);
+        if (!frozen && player.invincible <= 0 && collide(player.x, player.y, player.w, player.h, o.x, o.y, o.w, o.h)) die();
+        if (o.x < -200) obstacles.splice(i, 1);
+    }
+
+    if (!frozen && distance > 70) { 
+        if (distance >= 100 && gameTimer % 6000 == 0) {
+            // BURST MODE - 9 red lasers with 0.3 second (18 frame) stagger
+            for (let i = 0; i < 9; i++) {
+                redLasers.push({ targetY: player.y + player.h/2, timer: 180 + i * 18, x: width });
+            }
+            if(soundShock && soundShock.isLoaded() && millis() - lastShockSoundTime > shockSoundCooldown) { 
+                if(soundShock.isPlaying()) soundShock.stop();
+                soundShock.setVolume(0.3); 
+                soundShock.play();
+                lastShockSoundTime = millis();
+            }
+        } else if (gameTimer % 1000 == 0) {
+            // NORMAL MODE - single laser every 1 second
+            redLasers.push({ targetY: player.y + player.h/2, timer: 180, x: width }); 
+            if(soundShock && soundShock.isLoaded() && millis() - lastShockSoundTime > shockSoundCooldown) { 
+                if(soundShock.isPlaying()) soundShock.stop();
+                soundShock.setVolume(0.3); 
+                soundShock.play();
+                lastShockSoundTime = millis();
+            }
+        }
+    }
+    for (let i = redLasers.length - 1; i >= 0; i--) {
+        let rl = redLasers[i];
+        push(); 
+        if (rl.timer > 0) {
+            // AIMING PHASE
+            if(!frozen) { rl.targetY = player.y + player.h/2; rl.timer--; }
+            stroke(255, 0, 0, map(rl.timer, 0, 180, 255, 50)); strokeWeight(2); line(0, rl.targetY, width, rl.targetY);
+        } else if (rl.warningTimer === undefined) {
+            // INITIALIZE WARNING PHASE
+            rl.warningTimer = 60; // 1 second at 60fps
+        } else if (rl.warningTimer > 0) {
+            // WARNING PHASE - show ! symbol
+            if(!frozen) rl.warningTimer--;
+            fill(255, 100, 100); textAlign(CENTER, CENTER); textSize(32); text('!', width - 30, rl.targetY);
+        } else {
+            // SHOOTING PHASE - laser moves faster
+            if(!frozen) rl.x -= 50; 
+            drawingContext.shadowBlur = 15; drawingContext.shadowColor = 'red';
+            fill(255, 50, 50); stroke(255); strokeWeight(2); 
+            rect(rl.x, rl.targetY - 10, 140, 20, 5);
+            if (!frozen && player.invincible <= 0 && collide(player.x, player.y, player.w, player.h, rl.x, rl.targetY-10, 140, 20)) die();
+            if (rl.x < -200) redLasers.splice(i, 1);
+        }
+        pop();
+    }
+
+    if (!frozen && gameTimer % 300 == 0) spawnCoinPattern();
+    for (let i = coins.length - 1; i >= 0; i--) {
+        let c = coins[i]; if(!frozen) c.x -= gameSpeed;
+        push(); imageMode(CENTER); image(coinImg, c.x, c.y, 35, 35); pop();
+        if (!frozen && dist(player.x + 40, player.y + 30, c.x, c.y) < 40) { 
+            moneyTotal += 1; coinUI.timer = 120; // 2 seconds
+            playCoinTone(); gameSaveData(); coins.splice(i, 1); 
+        }
+        if (c.x < -200) coins.splice(i, 1);
+    }
+
+    for (let i = diamonds.length - 1; i >= 0; i--) {
+        let d = diamonds[i]; if(!frozen) d.x -= gameSpeed;
+        push(); imageMode(CENTER); image(diamondImg, d.x, d.y, 40, 40); pop();
+        if (!frozen && dist(player.x + 40, player.y + 30, d.x, d.y) < 40) { 
+            diamondsTotal += 1; diamUI.timer = 120; // 2 seconds
+            playCoinTone(); gameSaveData(); diamonds.splice(i, 1); 
+        }
+        if (d.x < -200) diamonds.splice(i, 1);
+    }
+
+    drawingContext.shadowBlur = 0; 
+    textAlign(LEFT); textSize(24); strokeWeight(2); stroke(0);
+    fill(192, 192, 192); text(`DISTANCE: ${floor(distance)}`, 25, 45);
+    
+    if (!frozen && gameState !== "DEAD") {
+        if(coinUI.timer > 0) coinUI.timer--;
+        if(diamUI.timer > 0) diamUI.timer--;
+    }
+    
+    let targetCoinX = (coinUI.timer > 0 || gameState === "DEAD") ? 25 : -300;
+    coinUI.x = lerp(coinUI.x, targetCoinX, 0.1);
+    fill(255, 215, 0); text(`COINS: ${moneyTotal}`, coinUI.x, 80);
+
+    let targetDiamX = (diamUI.timer > 0 || gameState === "DEAD") ? 25 : -300;
+    diamUI.x = lerp(diamUI.x, targetDiamX, 0.1);
+    fill(0, 191, 255); text(`DIAM: ${diamondsTotal}`, diamUI.x, 115);
+}
+
+function die() {
+    gameState = "DEAD"; deadTimer = 180; reviveTimer = 300; gameOverY = 600; shake = 25;
+    bullets = [];
+    stopMinigun();
+    if (soundShock && soundShock.isLoaded()) { 
+        if(soundShock.isPlaying()) soundShock.stop();
+        soundShock.setVolume(1.0); 
+        soundShock.play(); 
+        lastShockSoundTime = millis();
+    }
+    if (musicBg && musicBg.isLoaded()) musicBg.setVolume(0.2); 
+    if (floor(distance) > highscore) { highscore = floor(distance); gameSaveData(); }
+    for(let i=0; i<60; i++) particles.push({x: player.x + 40, y: player.y + 30, vx: random(-6, 6), vy: random(-6, 6), a: 255});
+}
+
+function drawDeadScreen() {
+    updateGame(true);
+    
+    // OPTIMIZACION CRITICA: LIMPIEZA DE PARTICULAS (EVITA LAG DE SONIDO Y FPS)
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx; p.y += p.vy; p.a -= 5;
+        fill(255, 255, 0, p.a); noStroke(); circle(p.x, p.y, random(3, 7));
+        if (p.a <= 0) particles.splice(i, 1);
+    }
+
+    if (deadTimer > 0) deadTimer--;
+    else {
+        gameOverY = lerp(gameOverY, 0, 0.1);
+        push(); translate(0, gameOverY); fill(0, 0, 0, 150); rect(0, 0, width, height);
+        
+        drawingContext.shadowBlur = 25; drawingContext.shadowColor = 'rgba(255, 50, 50, 0.6)';
+        fill(255, 100, 100); textAlign(CENTER); textStyle(BOLD); textSize(50); text("GAME OVER", width/2, height/2 - 120);
+        textStyle(NORMAL); drawingContext.shadowBlur = 0;
+        
+        let rx = width/2 - 120;
+        let ry1 = height/2 - 50;
+        let canR = moneyTotal >= revivePrice;
+        
+        // Revive with Money Button
+        if(isMouseOver(rx, ry1, 240, 50)) { 
+            drawingContext.shadowBlur = 20; drawingContext.shadowColor = 'rgba(255, 255, 0, 0.7)';
+            fill(255, 255, 100); stroke(255, 255, 0); strokeWeight(2);
+        }
+        else { 
+            drawingContext.shadowBlur = 10; drawingContext.shadowColor = 'rgba(255, 255, 0, 0.3)';
+            fill(canR ? 255 : 100, canR ? 255 : 100, 0);
+            if(canR) stroke(200, 200, 0); else stroke(80, 80, 0);
+            strokeWeight(1);
+        }
+        rect(rx, ry1, 240, 50, 8);
+        
+        resetMatrix(); push(); translate(0, gameOverY);
+        drawingContext.shadowBlur = 0; noStroke();
+        fill(0); textStyle(BOLD); textSize(18); text(`REVIVE ($${revivePrice})`, width/2, height/2 - 18);
+        textStyle(NORMAL);
+        
+        let ry2 = height/2 + 10;
+        let canRD = diamondsTotal >= revivePriceDiam;
+        if(isMouseOver(rx, ry2, 240, 50)) { 
+            drawingContext.shadowBlur = 20; drawingContext.shadowColor = 'rgba(0, 255, 255, 0.7)';
+            fill(100, 255, 255); stroke(0, 255, 255); strokeWeight(2);
+        }
+        else { 
+            drawingContext.shadowBlur = 10; drawingContext.shadowColor = 'rgba(0, 255, 255, 0.3)';
+            fill(canRD ? 0 : 100, canRD ? 200 : 100, canRD ? 255 : 100);
+            if(canRD) stroke(0, 150, 200); else stroke(80, 80, 80);
+            strokeWeight(1);
+        }
+        rect(rx, ry2, 240, 50, 8);
+        
+        resetMatrix(); push(); translate(0, gameOverY);
+        drawingContext.shadowBlur = 0; noStroke();
+        fill(0); textStyle(BOLD); textSize(18); text(`REVIVE (${revivePriceDiam} DIAM)`, width/2, height/2 + 42);
+        textStyle(NORMAL);
+        
+        fill(200, 200, 200); textSize(18); text(`MENU: ${ceil(reviveTimer/60)}`, width/2, height/2 + 95);
+        pop();
+        reviveTimer--; if (reviveTimer <= 0) resetToMenu();
+    }
+}
+
+function drawMenu() {
+    background(15, 15, 25);
+    
+    // TITLE WITH COLORED WORDS
+    textAlign(CENTER); textStyle(BOLD); textSize(70);
+    let leftWord = 'JETPACK ';
+    let rightWord = 'DOGRIDE';
+    let totalW = textWidth(leftWord + rightWord);
+    let centerX = width/2;
+
+    // Jetpack - yellow neon
+    drawingContext.shadowBlur = 40; drawingContext.shadowColor = 'rgba(255, 255, 0, 0.9)';
+    fill(255, 250, 120); stroke(255, 240, 0); strokeWeight(3);
+    text(leftWord, centerX - (totalW/2) + textWidth(leftWord)/2, 110);
+
+    // Dogride - silver
+    drawingContext.shadowBlur = 20; drawingContext.shadowColor = 'rgba(200, 200, 200, 0.9)';
+    fill(200, 200, 200); stroke(240); strokeWeight(1);
+    text(rightWord, centerX + (totalW/2) - textWidth(rightWord)/2, 110);
+
+    textStyle(NORMAL); noStroke(); drawingContext.shadowBlur = 0;
+    
+    // STATS WITH SUBTLE GLOW
+    drawingContext.shadowBlur = 8; drawingContext.shadowColor = 'rgba(200, 200, 200, 0.3)';
+    fill(200); textSize(20); text(`HIGHSCORE: ${highscore}m`, width/2, 160);
+    fill(255, 255, 0); text(`MONEY: $${moneyTotal}`, width/2, 200);
+    fill(0, 255, 255); text(`DIAMONDS: ${diamondsTotal}`, width/2, 240);
+    drawingContext.shadowBlur = 0;
+    
+    // BOTON PLAY
+    let playX = width/2 - 190, playY = 300;
+    if (isMouseOver(playX, playY, 170, 70)) {
+        drawingContext.shadowBlur = 25; drawingContext.shadowColor = 'rgba(255, 255, 0, 0.7)';
+        fill(255, 255, 100); stroke(255, 255, 0); strokeWeight(2);
+        push(); translate(playX+85, playY+35); scale(1.08); rect(-85, -35, 170, 70, 10); pop();
+    } else {
+        drawingContext.shadowBlur = 10; drawingContext.shadowColor = 'rgba(255, 255, 0, 0.4)';
+        fill(255, 255, 0); stroke(200, 200, 0); strokeWeight(1);
+        rect(playX, playY, 170, 70, 10);
+    }
+    drawingContext.shadowBlur = 0; noStroke();
+    fill(0); textStyle(BOLD); textSize(32); text("PLAY", width/2 - 105, 347);
+    textStyle(NORMAL);
+    
+    // BOTON SHOP
+    let shopX = width/2 + 20, shopY = 300;
+    if (isMouseOver(shopX, shopY, 170, 70)) {
+        drawingContext.shadowBlur = 25; drawingContext.shadowColor = 'rgba(0, 255, 255, 0.7)';
+        fill(100, 255, 255); stroke(0, 255, 255); strokeWeight(2);
+        push(); translate(shopX+85, shopY+35); scale(1.08); rect(-85, -35, 170, 70, 10); pop();
+    } else {
+        drawingContext.shadowBlur = 10; drawingContext.shadowColor = 'rgba(0, 242, 255, 0.4)';
+        fill(0, 242, 255); stroke(0, 200, 200); strokeWeight(1);
+        rect(shopX, shopY, 170, 70, 10);
+    }
+    drawingContext.shadowBlur = 0; noStroke();
+    fill(0); textStyle(BOLD); textSize(32); text("SHOP", width/2 + 105, 347);
+    textStyle(NORMAL);
+    
+    drawingContext.shadowBlur = 0;
+    fill(200, 200, 200); textSize(16); text("SPACE/CLICK: FLY | P: PAUSE", width/2, 430);
+}
+
+function drawShop() {
+    background(10, 10, 20); 
+    drawGrid();
+    
+    // FONDO TRANSLUCIDO ELEGANTE
+    fill(0, 0, 0, 150); rect(0, 0, width, height);
+
+    // HEADER
+    drawingContext.shadowBlur = 25; drawingContext.shadowColor = (shopPage===0) ? 'yellow' : 'cyan';
+    fill(255); textAlign(CENTER); textSize(45); textStyle(BOLD);
+    if (shopPage === 0) text("WEAPON COLORS", width/2, 60);
+    else text("CHARACTER SKINS", width/2, 60);
+    textStyle(NORMAL);
+    drawingContext.shadowBlur = 0;
+    
+    fill(0, 255, 255); textSize(20); text(`DIAMONDS: ${diamondsTotal}`, width/2, 90);
+
+    let startX = width/2 - 320;
+    let startY = 120;
+
+    // PAGINA 0: COLORES
+    if (shopPage === 0) {
+        for(let i = 0; i < shopOptions.length; i++){
+            let opt = shopOptions[i];
+            let col = i % 2;
+            let row = floor(i / 2);
+            let x = startX + col * 330;
+            let y = startY + row * 70;
+            
+            let isHover = isMouseOver(x, y, 310, 55);
+            let isBought = boughtColors.includes(opt.name);
+            let isEquipped = bulletColor.name === opt.name;
+            
+            // CARD DESIGN
+            if(isHover) {
+                push(); translate(x+155, y+27.5); scale(1.03); translate(-(x+155), -(y+27.5));
+            }
+            
+            // Sombra y Borde
+            if(isEquipped) { stroke(0, 255, 0); drawingContext.shadowColor = 'lime'; drawingContext.shadowBlur = 15; }
+            else if(isBought) { stroke(0, 200, 255); drawingContext.shadowColor = 'cyan'; drawingContext.shadowBlur = 10; }
+            else if(isHover) { stroke(255); drawingContext.shadowBlur = 5; }
+            else { stroke(60); drawingContext.shadowBlur = 0; }
+            
+            strokeWeight(isEquipped ? 3 : 2);
+            
+            // Gradiente de fondo de tarjeta
+            let grad = drawingContext.createLinearGradient(x, y, x+310, y);
+            grad.addColorStop(0, 'rgba(20, 20, 30, 0.95)');
+            grad.addColorStop(1, 'rgba(40, 40, 60, 0.95)');
+            drawingContext.fillStyle = grad;
+            rect(x, y, 310, 55, 10);
+            
+            // Color Preview Box
+            drawingContext.shadowBlur = 0; stroke(200); strokeWeight(1); fill(opt.r, opt.g, opt.b);
+            rect(x + 15, y + 15, 25, 25, 5);
+            
+            drawingContext.shadowBlur = 0;
+            noStroke(); fill(255); textAlign(LEFT); textSize(16); textStyle(BOLD);
+            text(opt.name, x + 55, y + 33); textStyle(NORMAL);
+            
+            textAlign(RIGHT); textSize(14);
+            if (isEquipped) { fill(0, 255, 0); text("EQUIPPED", x + 295, y + 33); }
+            else if (isBought) { fill(0, 200, 255); text("OWNED", x + 295, y + 33); }
+            else { 
+                if (diamondsTotal >= opt.price) { fill(0, 255, 255); text(opt.price + " DIAM", x + 295, y + 33); }
+                else { fill(100); text(opt.price + " DIAM", x + 295, y + 33); }
+            }
+            
+            if(isHover) pop();
+        }
+        
+        // BOTON NEXT
+        let bx = width - 120, by = height - 70;
+        if(isMouseOver(bx, by, 100, 40)) { fill(255); stroke(255); } else { fill(200); stroke(200); }
+        rect(bx, by, 100, 40, 5);
+        fill(0); noStroke(); textAlign(CENTER); textSize(18); text("NEXT >", bx + 50, by + 27);
+
+    } 
+    // PAGINA 1: SKINS
+    else if (shopPage === 1) {
+        for(let i = 0; i < skinsList.length; i++){
+            let skin = skinsList[i];
+            let col = i % 2;
+            let row = floor(i / 2);
+            let x = startX + col * 330;
+            let y = startY + row * 70;
+            
+            let isHover = isMouseOver(x, y, 310, 55);
+            let isBought = boughtSkins.includes(skin.name);
+            let isEquipped = currentSkin === skin.name;
+            
+            if(isHover) {
+                push(); translate(x+155, y+27.5); scale(1.03); translate(-(x+155), -(y+27.5));
+            }
+
+            if (isEquipped) { stroke(0, 255, 0); drawingContext.shadowColor = 'lime'; drawingContext.shadowBlur = 15; }
+            else if (isBought) { stroke(0, 200, 255); drawingContext.shadowColor = 'cyan'; drawingContext.shadowBlur = 10; }
+            else if (isHover) { stroke(255); drawingContext.shadowBlur = 5; }
+            else { stroke(60); drawingContext.shadowBlur = 0; }
+            
+            strokeWeight(isEquipped ? 3 : 2);
+             // Gradiente de fondo de tarjeta
+            let grad = drawingContext.createLinearGradient(x, y, x+310, y);
+            grad.addColorStop(0, 'rgba(20, 20, 30, 0.95)');
+            grad.addColorStop(1, 'rgba(40, 40, 60, 0.95)');
+            drawingContext.fillStyle = grad;
+            rect(x, y, 310, 55, 10);
+            
+            // DIBUJAR MINIATURA DEL SKIN
+            if (skin.img) {
+                push(); imageMode(CENTER);
+                let aspect = skin.img.width / skin.img.height;
+                // Marco para la imagen
+                noStroke(); fill(0,0,0,100); ellipse(x + 35, y + 27, 45, 45);
+                image(skin.img, x + 35, y + 27, 35 * aspect, 35);
+                pop();
+            }
+            
+            drawingContext.shadowBlur = 0;
+            noStroke(); fill(255); textAlign(LEFT); textSize(16); textStyle(BOLD);
+            text(skin.name, x + 70, y + 33); textStyle(NORMAL);
+            
+            textAlign(RIGHT); textSize(14);
+            if (isEquipped) { fill(0, 255, 0); text("EQUIPPED", x + 295, y + 33); }
+            else if (isBought) { fill(0, 200, 255); text("OWNED", x + 295, y + 33); }
+            else { 
+                if (diamondsTotal >= skin.priceDiam) { fill(0, 255, 255); text(skin.priceDiam + " DIAM", x + 295, y + 33); }
+                else if (moneyTotal >= skin.priceCoin) { fill(255, 215, 0); text(skin.priceCoin/1000 + "k COINS", x + 295, y + 33); }
+                else { fill(100); text(skin.priceDiam + " DIAM", x + 295, y + 33); } 
+            }
+            
+            if(isHover) pop();
+        }
+
+        // BOTON PREV 
+        let bx = width - 120, by = height - 60;
+        if(isMouseOver(bx, by, 100, 40)) { fill(255); stroke(255); } else { fill(200); stroke(200); }
+        rect(bx, by, 100, 40, 5);
+        fill(0); noStroke(); textAlign(CENTER); textSize(18); text("< PREV", bx + 50, by + 27);
+    }
+
+    let ex = 20, ey = 20;
+    if(isMouseOver(ex, ey, 100, 40)) { fill(255, 100, 100); stroke(255); } 
+    else { fill(200, 50, 50); stroke(200,0,0); }
+    rect(ex, ey, 100, 40, 5);
+    fill(255); noStroke(); textAlign(CENTER); textSize(18); text("EXIT", ex + 50, ey + 27);
+}
+
+function drawPauseScreen() {
+    background(20, 20, 30); updateGame(true);
+    fill(0, 0, 0, 180); rect(0, 0, width, height);
+    
+    if (!quitConfirm) {
+        drawingContext.shadowBlur = 20; drawingContext.shadowColor = 'cyan';
+        fill(255); textAlign(CENTER); textStyle(BOLD); textSize(50); text("PAUSE", width/2, height/2 - 50);
+        textStyle(NORMAL); drawingContext.shadowBlur = 0;
+        
+        fill(255, 255, 0); textSize(18); text("PRESS P TO RESUME MADNESS", width/2, height/2 - 10);
+        
+        let qx = width/2 - 80, qy = height/2 + 30;
+        if(isMouseOver(qx, qy, 160, 45)) { fill(255, 100, 100); stroke(255); stroke(2); } else { fill(200, 50, 50); stroke(100, 50, 50); strokeWeight(1); }
+        drawingContext.shadowBlur = 5; drawingContext.shadowColor = 'rgba(255,0,0,0.5)';
+        rect(qx, qy, 160, 45, 8);
+        drawingContext.shadowBlur = 0;
+        fill(255); noStroke(); textSize(18); text("QUIT RUN", width/2, height/2 + 58);
+    } else {
+        drawingContext.shadowBlur = 15; drawingContext.shadowColor = 'yellow';
+        fill(255, 255, 0); textAlign(CENTER); textStyle(BOLD); textSize(36); text("ARE YOU SURE?", width/2, height/2 - 40);
+        textStyle(NORMAL); drawingContext.shadowBlur = 0;
+        
+        if(isMouseOver(width/2 - 110, height/2 + 10, 100, 50)) { fill(0, 255, 0); stroke(0, 255, 0); strokeWeight(2); drawingContext.shadowBlur = 8; drawingContext.shadowColor = 'lime'; } 
+        else { fill(0, 200, 0); stroke(0, 150, 0); strokeWeight(1); drawingContext.shadowBlur = 0; }
+        rect(width/2 - 110, height/2 + 10, 100, 50, 8);
+        
+        if(isMouseOver(width/2 + 10, height/2 + 10, 100, 50)) { fill(255, 100, 100); stroke(255, 100, 100); strokeWeight(2); drawingContext.shadowBlur = 8; drawingContext.shadowColor = 'rgba(255,100,100,0.5)'; } 
+        else { fill(200, 50, 50); stroke(150, 50, 50); strokeWeight(1); drawingContext.shadowBlur = 0; }
+        rect(width/2 + 10, height/2 + 10, 100, 50, 8);
+        
+        drawingContext.shadowBlur = 0; fill(0); noStroke(); textAlign(CENTER); textSize(20); text("YES", width/2 - 60, height/2 + 42); text("NO", width/2 + 60, height/2 + 42);
+    }
+}
+
+function drawResumeCountdown() {
+    textAlign(CENTER, CENTER); textSize(100); fill(192, 192, 192); 
+    text(ceil(resumeTimer / 60), width/2, height/2);
+    resumeTimer--;
+    if (resumeTimer <= 0 && musicBg && !musicBg.isPlaying()) musicBg.loop();
+}
+
+function keyPressed() {
+    if (key === 'p' || key === 'P') {
+        if (gameState === "PLAY" && !isPaused) { 
+            isPaused = true; 
+            quitConfirm = false;
+            if(musicBg) musicBg.pause(); 
+            stopMinigun();
+        }
+        else if (isPaused) { isPaused = false; resumeTimer = 180; }
+    }
+}
+
+function mousePressed() {
+    if (!audioStarted) { userStartAudio(); audioStarted = true; }
+    if (gameState === "MENU") {
+        if (mouseX > width/2 - 190 && mouseX < width/2 - 20 && mouseY > 300 && mouseY < 370) startGame();
+        if (mouseX > width/2 + 20 && mouseX < width/2 + 190 && mouseY > 300 && mouseY < 370) {
+            gameState = "SHOP";
+            shopPage = 0; // Reset a pagina colores al entrar
+        }
+    } else if (gameState === "SHOP") {
+        // EXIT
+        if (mouseX > 20 && mouseX < 120 && mouseY > 20 && mouseY < 60) gameState = "MENU";
+        
+        let startX = width/2 - 320; let startY = 120;
+        
+        // INTERACCION PAGINA 0 (COLORES)
+        if (shopPage === 0) {
+            for(let i = 0; i < shopOptions.length; i++){
+                let col = i % 2; let row = floor(i / 2);
+                let x = startX + col * 330; let y = startY + row * 70;
+                if (mouseX > x && mouseX < x + 310 && mouseY > y && mouseY < y + 55) {
+                    let opt = shopOptions[i];
+                    if (boughtColors.includes(opt.name)) {
+                        bulletColor = { r: opt.r, g: opt.g, b: opt.b, name: opt.name };
+                        gameSaveData();
+                    } else if (diamondsTotal >= opt.price) {
+                        diamondsTotal -= opt.price;
+                        boughtColors.push(opt.name);
+                        feedbackText = "BOUGHT!"; feedbackTimer = 120;
+                        gameSaveData();
+                    }
+                }
+            }
+            // BOTON NEXT
+            if (mouseX > width - 120 && mouseX < width - 20 && mouseY > height - 70 && mouseY < height - 30) {
+                shopPage = 1;
+            }
+        } 
+        // INTERACCION PAGINA 1 (SKINS)
+        else if (shopPage === 1) {
+            // BOTON PREV
+            if (mouseX > width - 120 && mouseX < width - 20 && mouseY > height - 60 && mouseY < height - 20) {
+                shopPage = 0;
+            }
+
+            for(let i = 0; i < skinsList.length; i++){
+                let col = i % 2; let row = floor(i / 2);
+                let x = startX + col * 330; let y = startY + row * 70;
+                if (mouseX > x && mouseX < x + 310 && mouseY > y && mouseY < y + 55) {
+                    let skin = skinsList[i];
+                    if (boughtSkins.includes(skin.name)) {
+                        currentSkin = skin.name;
+                        feedbackText = "EQUIPPED!"; feedbackTimer = 60;
+                        gameSaveData();
+                    } else {
+                        // LOGICA DE COMPRA (DIAMANTES O MONEDAS)
+                        let bought = false;
+                        if (diamondsTotal >= skin.priceDiam) {
+                            diamondsTotal -= skin.priceDiam;
+                            bought = true;
+                        } else if (moneyTotal >= skin.priceCoin) {
+                            moneyTotal -= skin.priceCoin;
+                            bought = true;
+                        }
+
+                        if (bought) {
+                            boughtSkins.push(skin.name);
+                            feedbackText = "BOUGHT!"; feedbackTimer = 120;
+                            gameSaveData();
+                        } else {
+                            feedbackText = "NOT ENOUGH MONEY!"; feedbackTimer = 60;
+                        }
+                    }
+                }
+            }
+        }
+
+    } else if (isPaused) {
+        if (!quitConfirm) { if (mouseX > width/2 - 80 && mouseX < width/2 + 80 && mouseY > height/2 + 30 && mouseY < height/2 + 75) quitConfirm = true; }
+        else {
+            if (mouseX > width/2 - 110 && mouseX < width/2 - 10 && mouseY > height/2 + 10 && mouseY < height/2 + 60) {
+                quitConfirm = false; 
+                stopMinigun();
+                resetToMenu();
+            }
+            if (mouseX > width/2 + 10 && mouseX < width/2 + 110 && mouseY > height/2 + 10 && mouseY < height/2 + 60) quitConfirm = false; 
+        }
+    } else if (gameState === "DEAD" && deadTimer <= 0) { 
+        if (moneyTotal >= revivePrice && mouseX > width/2 - 120 && mouseX < width/2 + 120 && mouseY > gameOverY + height/2 - 50 && mouseY < gameOverY + height/2) {
+            moneyTotal -= revivePrice; revivePrice += 500; executeRevive();
+        } else if (diamondsTotal >= revivePriceDiam && mouseX > width/2 - 120 && mouseX < width/2 + 120 && mouseY > gameOverY + height/2 + 10 && mouseY < gameOverY + height/2 + 60) {
+            diamondsTotal -= revivePriceDiam; revivePriceDiam += 1; executeRevive();
+        }
+    }
+}
+
+function startGame() {
+    revivePrice = 500; revivePriceDiam = 1; gameSpeed = 5; gameState = "PLAY"; distance = 0; 
+    
+    if (musicLobby) musicLobby.stop();
+
+    gameTimer = 0;
+    bigCoin = null;
+    coinRainTimer = 0;
+    
+    obstacles = []; coins = []; bullets = []; redLasers = []; diamonds = []; particles = [];
+    backgroundFrame = 0; player.reset(); shake = 35; isPaused = false; resumeTimer = 0; quitConfirm = false;
+    if (musicBg) { musicBg.stop(); musicBg.setVolume(1.0); musicBg.loop(); }
+    stopMinigun();
+}
+
+function resetToMenu() {
+    gameState = "MENU"; isPaused = false; quitConfirm = false;
+    lastShockSoundTime = 0; // Reset sound cooldown
+    if (musicBg) musicBg.stop(); 
+    stopMinigun();
+    if (soundShock) soundShock.stop();
+    if (musicLobby) musicLobby.loop();
+}
+
+function executeRevive() {
+    gameSaveData(); gameSpeed = 4; gameState = "PLAY"; player.invincible = 180;
+    lastShockSoundTime = 0; // Reset sound cooldown
+    stopMinigun();
+    if (soundShock && soundShock.isPlaying()) soundShock.stop();
+    redLasers = []; obstacles = []; resumeTimer = 120; if (musicBg) musicBg.setVolume(1.0); 
+}
+
+function gameSaveData() { 
+    localStorage.setItem('highscore', highscore); 
+    localStorage.setItem('money', moneyTotal); 
+    localStorage.setItem('diamonds', diamondsTotal); 
+    localStorage.setItem('boughtColors', JSON.stringify(boughtColors));
+    localStorage.setItem('bulletColor', JSON.stringify(bulletColor));
+    // GUARDAR DATOS DE SKINS
+    localStorage.setItem('boughtSkins', JSON.stringify(boughtSkins));
+    localStorage.setItem('currentSkin', currentSkin);
+}
+function  gameGetItem(k) { return localStorage.getItem(k); }
+function collide(x1, y1, w1, h1, x2, y2, w2, h2) { return x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2; }
+</script>
+</body>
+</html>
